@@ -1,0 +1,94 @@
+// To get started, press Ctrl+Space to bring up the completion menu and view the available nodes.
+
+// You can also use the buttons in the sidebar to perform actions on nodes.
+// Actions currently available include:
+
+// * Enabling / disabling the node
+// * Adding the bus to a bus
+// * Removing the node
+// * Connecting ADC channels
+
+// For more help, browse the DeviceTree documentation at https: //docs.zephyrproject.org/latest/guides/dts/index.html
+// You can also visit the nRF DeviceTree extension documentation at https: //nrfconnect.github.io/vscode-nrf-connect/devicetree/nrfdevicetree.html]
+#include "button_defs.h"
+/ {
+    aliases {
+        qdec0 = &qdec;
+        qdec2 = &qdec2;
+    };
+
+    &timers4 {
+        status = "okay";
+
+        qdec: qdec {
+            status = "okay";
+            compatible = "st,stm32-qdec";
+            pinctrl-0 = <&tim4_ch1_pb6>, <&tim4_ch2_pb7>;
+            pinctrl-names = "default";
+            st,input-polarity-inverted;
+            st,input-filter-level = <13>;
+            st,counts-per-revolution = <30>;
+        };
+    };
+
+    &timers3 {
+        status = "okay";
+
+        qdec2: qdec2 {
+            status = "okay";
+            compatible = "st,stm32-qdec";
+            //pinctrl-0 = <&tim1_ch1_pe9>, <&tim1_ch2_pe11>;
+            pinctrl-0 = <&tim3_ch1_pb4>, <&tim3_ch2_pb5>;//<&qdec_pinctrl>;//<&tim3_ch2_pc7>, <&tim3_ch3_pc8>;
+            pinctrl-names = "default";
+            st,input-polarity-inverted;
+            st,input-filter-level = <13>;
+            st,counts-per-revolution = <30>;
+        };
+    };
+
+    &tim3_ch1_pb4 {
+        bias-pull-up;
+    };
+
+    &tim3_ch2_pb5 {
+        bias-pull-up;
+    };
+
+
+    &tim4_ch1_pb6 {
+        bias-pull-up;
+    };
+
+    &tim4_ch2_pb7 {
+        bias-pull-up;
+    };
+
+
+    gpio_keys {
+        compatible = "gpio-keys";
+        debounce-interval-ms = <5>;
+        user_button1: button_1 {
+            gpios = <&gpioa 5 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+            zephyr,code = <HAT_BIT_CLICK>;
+        };
+        user_button2: button_2 {
+            gpios = <&gpioa 6 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+            zephyr,code = <HAT_BIT_DOWN>;
+        };
+        user_button3: button_3 {
+            gpios = <&gpiog 12 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+            zephyr,code = <HAT_BIT_LEFT>;
+        };
+        user_button4: button_4 {
+            gpios = <&gpiod 14 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+            zephyr,code = <HAT_BIT_RIGHT>;
+        };
+        user_button5: button_5 {
+            gpios = <&gpiod 15 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+            zephyr,code = <HAT_BIT_UP>;
+        };
+
+    };
+
+
+};
