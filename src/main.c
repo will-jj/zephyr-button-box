@@ -52,16 +52,18 @@ static const uint8_t hid_report_desc[] = {
 	HID_REPORT_COUNT(16),
 	HID_INPUT(0x02),
 
-	0x05, 0x01,		  // Usage Page        : Generic Desktop
-	0x09, 0x39,		  // Usage             : Hat Switch,
-	0x15, 0x00,		  // Logical Min       : 0
-	0x25, 0x07,		  // Logical Max       : 7
-	0x46, 0x3B, 0x01, // Physical Maximum  : 315 degrees (Optional)
-	0x75, 0x08,		  // Report Size       : 8
-	0x95, 0x01,		  // Report Count      : 1
-	0x65, 0x14,		  // Unit              : English Rotation/Angular Position 1 degree (Optional)
-	0x81, 0x42,		  // Input             : Data, Var, Abs, Null State
-
+	HID_USAGE_PAGE(HID_USAGE_GEN_DESKTOP),
+	HID_USAGE(HID_USAGE_GEN_HATSWITCH),
+	HID_LOGICAL_MIN8(0),
+	HID_LOGICAL_MAX8(7),
+	// Physical Maximum  : 315 degrees (Optional)
+	0x46, 0x3B, 0x01,
+	HID_REPORT_SIZE(8),
+	HID_REPORT_COUNT(1),
+	// Unit: English Rotation/Angular Position 1 degree (Optional)
+	0x65, 0x14,
+	// Input: Data, Var, Abs, Null State
+	HID_INPUT(0x42),
 	HID_END_COLLECTION};
 static enum usb_dc_status_code usb_status;
 
@@ -70,6 +72,13 @@ enum box_report_idx
 	BUTTONS_G0_IDX = 0,
 	BUTTONS_G1_IDX = 1,
 	HAT_IDX = 2,
+
+	BUTTONS_DOWN_IDX = 0,
+	BUTTONS_UP_IDX = 1,
+	HAT_CLICK_IDX = 2,
+	BUTTON_0_IDX = 3,
+	BUTTON_1_IDX = 4,
+
 };
 
 static uint8_t report[REPORT_SIZE];
@@ -128,11 +137,11 @@ static void input_cb(struct input_event *evt)
 
 	case BUTTON_0:
 		rwup_if_suspended();
-		WRITE_BIT(report_buttons, 3, evt->value);
+		WRITE_BIT(report_buttons, BUTTON_0_IDX, evt->value);
 		break;
 	case BUTTON_1:
 		rwup_if_suspended();
-		WRITE_BIT(report_buttons, 4, evt->value);
+		WRITE_BIT(report_buttons, BUTTON_1_IDX, evt->value);
 		break;
 
 	default:
@@ -157,18 +166,18 @@ static void read_encoder()
 	// Up button
 	if (clonks_to_clonk > 0)
 	{
-		WRITE_BIT(report_buttons, 1, 0);
+		WRITE_BIT(report_buttons, BUTTONS_DOWN_IDX, 0);
 
 		if (loop_counter > 0)
 		{
 			// Push button
-			WRITE_BIT(report_buttons, 0, 1);
+			WRITE_BIT(report_buttons, BUTTONS_UP_IDX, 1);
 			loop_counter--;
 		}
 		else
 		{
 			// Release button
-			WRITE_BIT(report_buttons, 0, 0);
+			WRITE_BIT(report_buttons, BUTTONS_UP_IDX, 0);
 			loop_counter--;
 			if (loop_counter == -1)
 			{
@@ -182,19 +191,19 @@ static void read_encoder()
 	// Down button
 	if (clonks_to_clonk < 0)
 	{
-		WRITE_BIT(report_buttons, 0, 0);
+		WRITE_BIT(report_buttons, BUTTONS_UP_IDX, 0);
 
 		if (loop_counter > 0)
 		{
 			// Push button
-			WRITE_BIT(report_buttons, 1, 1);
+			WRITE_BIT(report_buttons, BUTTONS_DOWN_IDX, 1);
 
 			loop_counter--;
 		}
 		else
 		{
 			// Release button
-			WRITE_BIT(report_buttons, 1, 0);
+			WRITE_BIT(report_buttons, BUTTONS_DOWN_IDX, 0);
 			loop_counter--;
 			if (loop_counter == -1)
 			{
@@ -209,8 +218,8 @@ static void read_encoder()
 		// reset
 		loop_counter = 2;
 		// release buttons
-		WRITE_BIT(report_buttons, 0, 0);
-		WRITE_BIT(report_buttons, 1, 0);
+		WRITE_BIT(report_buttons, BUTTONS_DOWN_IDX, 0);
+		WRITE_BIT(report_buttons, BUTTONS_UP_IDX, 0);
 	}
 	int rc;
 	rc = sensor_sample_fetch(dev_l);
@@ -310,11 +319,11 @@ static uint8_t get_hat()
 
 	if (hat_bits == 1 << HAT_BIT_CLICK)
 	{
-		WRITE_BIT(report_buttons, 2, 1);
+		WRITE_BIT(report_buttons, HAT_CLICK_IDX, 1);
 	}
 	else
 	{
-		WRITE_BIT(report_buttons, 2, 0);
+		WRITE_BIT(report_buttons, HAT_CLICK_IDX, 0);
 	}
 
 	return hat;
