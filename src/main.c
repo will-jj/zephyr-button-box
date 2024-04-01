@@ -12,7 +12,7 @@
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/input/input.h>
 #include <zephyr/sys/util.h>
-
+#include <zephyr/drivers/sensor.h>
 #include <zephyr/usb/usb_device.h>
 #include <zephyr/usb/class/usb_hid.h>
 #include "button_defs.h"
@@ -31,6 +31,13 @@ struct k_thread redline_thread_data;
 #define REDLINE_DELAY_TIME K_MSEC(50)
 
 static const struct gpio_dt_spec led0 = GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
+#define ENCODER_COUNTS_PER_REV DT_PROP(DT_ALIAS(qdec0), st_counts_per_revolution)
+
+const struct device *const dev_l = DEVICE_DT_GET(DT_ALIAS(qdec0));
+const struct device *const dev_r = DEVICE_DT_GET(DT_ALIAS(qdec2));
+struct sensor_value val;
+struct sensor_value val2;
+
 static const uint8_t hid_report_desc[] = {
 
 	HID_USAGE_PAGE(HID_USAGE_GEN_DESKTOP),
@@ -68,7 +75,9 @@ enum box_report_idx
 static uint8_t report[REPORT_SIZE];
 static uint32_t report_buttons;
 static uint32_t hat_bits;
-
+static int loop_counter = 2;
+static int clonks_to_clonk = 0;
+static int angle_prev;
 static K_SEM_DEFINE(report_sem, 0, 1);
 
 static void status_cb(enum usb_dc_status_code status, const uint8_t *param)
@@ -97,35 +106,158 @@ static void input_cb(struct input_event *evt)
 	{
 	case HAT_BIT_UP:
 		rwup_if_suspended();
-		WRITE_BIT(report_buttons, HAT_BIT_UP, evt->value);
 		WRITE_BIT(hat_bits, HAT_BIT_UP, evt->value);
 
 		break;
 	case HAT_BIT_LEFT:
 		rwup_if_suspended();
-		WRITE_BIT(report_buttons, HAT_BIT_LEFT, evt->value);
 		WRITE_BIT(hat_bits, HAT_BIT_LEFT, evt->value);
 		break;
 	case HAT_BIT_RIGHT:
 		rwup_if_suspended();
-		WRITE_BIT(report_buttons, HAT_BIT_RIGHT, evt->value);
 		WRITE_BIT(hat_bits, HAT_BIT_RIGHT, evt->value);
 		break;
 	case HAT_BIT_DOWN:
 		rwup_if_suspended();
-		WRITE_BIT(report_buttons, HAT_BIT_DOWN, evt->value);
 		WRITE_BIT(hat_bits, HAT_BIT_DOWN, evt->value);
 		break;
 	case HAT_BIT_CLICK:
 		rwup_if_suspended();
-		WRITE_BIT(report_buttons, HAT_BIT_CLICK, evt->value);
 		WRITE_BIT(hat_bits, HAT_BIT_CLICK, evt->value);
+		break;
+
+	case BUTTON_0:
+		rwup_if_suspended();
+		WRITE_BIT(report_buttons, 3, evt->value);
+		break;
+	case BUTTON_1:
+		rwup_if_suspended();
+		WRITE_BIT(report_buttons, 4, evt->value);
 		break;
 
 	default:
 		return;
 	}
 	k_mutex_unlock(&test_mutex);
+}
+
+/// @brief Does a positive modulo operation so the stack exchange answer works
+/// @param a Input
+/// @param n Modulus
+/// @return
+int mod_positive(int a, int n)
+{
+	return (a % n + n) % n;
+}
+
+static void read_encoder()
+{
+	// do all the encoder memes
+
+	// Up button
+	if (clonks_to_clonk > 0)
+	{
+		WRITE_BIT(report_buttons, 1, 0);
+
+		if (loop_counter > 0)
+		{
+			// Push button
+			WRITE_BIT(report_buttons, 0, 1);
+			loop_counter--;
+		}
+		else
+		{
+			// Release button
+			WRITE_BIT(report_buttons, 0, 0);
+			loop_counter--;
+			if (loop_counter == -1)
+			{
+				printk("LED set 0");
+				clonks_to_clonk--;
+				loop_counter = 2;
+			}
+		}
+	}
+
+	// Down button
+	if (clonks_to_clonk < 0)
+	{
+		WRITE_BIT(report_buttons, 0, 0);
+
+		if (loop_counter > 0)
+		{
+			// Push button
+			WRITE_BIT(report_buttons, 1, 1);
+
+			loop_counter--;
+		}
+		else
+		{
+			// Release button
+			WRITE_BIT(report_buttons, 1, 0);
+			loop_counter--;
+			if (loop_counter == -1)
+			{
+				clonks_to_clonk++;
+				loop_counter = 2;
+			}
+		}
+	}
+
+	if (clonks_to_clonk == 0)
+	{
+		// reset
+		loop_counter = 2;
+		// release buttons
+		WRITE_BIT(report_buttons, 0, 0);
+		WRITE_BIT(report_buttons, 1, 0);
+	}
+	int rc;
+	rc = sensor_sample_fetch(dev_l);
+	if (rc != 0)
+	{
+		printk("Failed to fetch sample (%d)\n", rc);
+		return 0;
+	}
+	rc = sensor_sample_fetch(dev_r);
+	if (rc != 0)
+	{
+		printk("Failed to fetch sample (%d)\n", rc);
+		return 0;
+	}
+
+	rc = sensor_channel_get(dev_l, SENSOR_CHAN_ROTATION, &val);
+	if (rc != 0)
+	{
+		printk("Failed to get data (%d)\n", rc);
+		return 0;
+	}
+
+	rc = sensor_sample_fetch(dev_l);
+	if (rc != 0)
+	{
+		printk("Failed to fetch sample (%d)\n", rc);
+		return 0;
+	}
+
+	rc = sensor_channel_get(dev_r, SENSOR_CHAN_ROTATION, &val2);
+	if (rc != 0)
+	{
+		printk("Failed to get data (%d)\n", rc);
+		return 0;
+	}
+
+	int a = val.val1 - angle_prev;
+
+	a = mod_positive((a + 180), 360) - 180;
+
+	angle_prev = val.val1;
+
+	// printk("Delta = %d degrees\n", a);
+
+	int clonks = a / (360 / ENCODER_COUNTS_PER_REV);
+	clonks_to_clonk += clonks;
+	printk("Clonks = %d clonks\n", clonks);
 }
 
 static uint8_t get_hat()
@@ -175,6 +307,16 @@ static uint8_t get_hat()
 	{
 		hat = HATSWITCH_NONE;
 	}
+
+	if (hat_bits == 1 << HAT_BIT_CLICK)
+	{
+		WRITE_BIT(report_buttons, 2, 1);
+	}
+	else
+	{
+		WRITE_BIT(report_buttons, 2, 0);
+	}
+
 	return hat;
 }
 
@@ -202,6 +344,7 @@ void thread_red_line(void)
 {
 	while (1)
 	{
+		read_encoder();
 		send_report();
 		k_sleep(REDLINE_DELAY_TIME);
 	}
